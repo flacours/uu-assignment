@@ -29,9 +29,10 @@ public class SimpleUserUserItemScorer extends AbstractItemScorer {
     private final UserEventDAO userDao;
     private final ItemEventDAO itemDao;
     private static final int NEIGHBOR_SIZE = 30;
-    private static final boolean _debug1 = false;
-    private static final boolean _debug2 = false;
-    // args 1024:77 1024:268 1024:462 1024:393 1024:36955 2048:77 2048:36955 2048:788
+    private static final boolean _debug1 = false; // debug neighbor list
+    private static final boolean _debug2 = false; // debug scoring
+    // demo ids 1024:77 1024:268 1024:462 1024:393 1024:36955 2048:77 2048:36955 2048:788
+    // my ids : 4037:9331 4037:24 4037:243 4037:1597 4037:641 1512:585 1512:955 1512:745 1512:243 1512:268 2289:3049 2289:5503 2289:1900 2289:1891 2289:85 304:146 304:1572 304:2164 304:664 304:745 253:120 253:607 253:453 253:550 253:14
     @Inject
     public SimpleUserUserItemScorer(UserEventDAO udao, ItemEventDAO idao) {
         userDao = udao;
@@ -41,24 +42,34 @@ public class SimpleUserUserItemScorer extends AbstractItemScorer {
     @Override
     public void score(long user, @Nonnull MutableSparseVector scores) {
         SparseVector userVector = getUserRatingVector(user);
-
-        
-        // TODO Score items for this user using user-user collaborative filtering
         double meanUser = userVector.mean();
         
         // This is the loop structure to iterate over items to score
         for (VectorEntry e: scores.fast(VectorEntry.State.EITHER)) {
-        	// equation score(i) = meanUser + (sum (similarity(u,v) * (r(v,i)-mean(v)) / sum( absolute(sim (u,v))
         	long itemId = e.getKey();
         	List<Neighbor> neighbors = getBestNeighbor(itemId, user, userVector, NEIGHBOR_SIZE);
             if(_debug1) printList(neighbors);
-        	double num = computeNumerator(neighbors,itemId );
-        	double denum = computeDenominator(neighbors);
-        	double score = meanUser + num / denum;
-        	if(_debug2) System.out.printf("%d score=%f (%f + %f/%f)\n", itemId, score, meanUser, num, denum);
+            double score = computeScore(meanUser, itemId, neighbors);
         	scores.set(e.getKey(), score);
         }
     }
+
+    /**
+     * equation score(i) = meanUser + (sum (similarity(u,v) * (r(v,i)-mean(v)) / sum( absolute(sim (u,v))
+     * @param meanUser
+     * @param itemId
+     * @param neighbors
+     * @return score
+     */
+	private double computeScore(double meanUser, long itemId, List<Neighbor> neighbors) 
+	{
+		double score;
+		double num = computeNumerator(neighbors, itemId);
+		double denum = computeDenominator(neighbors);
+		score = meanUser + num / denum;
+		if(_debug2) System.out.printf("%d score=%f (%f + %f/%f)\n", itemId, score, meanUser, num, denum);
+		return score;
+	}
     
     /**
      * Compute numerator of scoring function
@@ -72,9 +83,7 @@ public class SimpleUserUserItemScorer extends AbstractItemScorer {
     	for(Neighbor n : neighbors)
     	{
     		double rating_v_i = n.userRating.get(itemId, 0);
-
-    		double v = n.similarity * (rating_v_i - n.getMean());
-    		retVal += v;
+    		retVal += n.similarity * (rating_v_i - n.getMean());
     	}
     	return retVal;
     }
@@ -87,13 +96,9 @@ public class SimpleUserUserItemScorer extends AbstractItemScorer {
     private double computeDenominator(List<Neighbor> neighbors)
     {
     	double retVal = 0;
-    	for(Neighbor n : neighbors)
-    	{
-    		retVal += Math.abs(n.similarity);
-    	}
+    	for(Neighbor n : neighbors) retVal += Math.abs(n.similarity);
     	return retVal;
     }
-    
 
     /**
      * Get a user's rating vector.
@@ -108,8 +113,6 @@ public class SimpleUserUserItemScorer extends AbstractItemScorer {
         return RatingVectorUserHistorySummarizer.makeRatingVector(history);
     }
     
-   
-    
     /**
      * Get a user best neighbor
      * @param userId The user ID.
@@ -122,6 +125,7 @@ public class SimpleUserUserItemScorer extends AbstractItemScorer {
     	List<Neighbor> neighborList = new ArrayList<Neighbor>();
     	CosineVectorSimilarity cosineVector = new CosineVectorSimilarity();
     	MutableSparseVector msUser = userVector.mutableCopy();
+		// center mean : we substract the vector average
     	msUser.add(-1*msUser.mean());
     	for(UserHistory<Event> u : userDao.streamEventsByUser().fast())
     	{
@@ -131,6 +135,7 @@ public class SimpleUserUserItemScorer extends AbstractItemScorer {
     		if(neighborVector.containsKey(itemId))
     		{
     			MutableSparseVector ms = neighborVector.mutableCopy();
+    			// center mean : we substract the vector average
     			ms.add(-1*ms.mean());
     			double similarity = cosineVector.similarity(msUser, ms);
     			neighborList.add(new Neighbor(neighborId, ms.freeze(), similarity));
@@ -142,11 +147,14 @@ public class SimpleUserUserItemScorer extends AbstractItemScorer {
 
     private void printList(List<Neighbor> neighborList) 
     {
-    	for(Neighbor n : neighborList) {
-    		System.out.printf("%d %f %f\n", n.userId, n.similarity, n.getMean());
-    	}
+    	for(Neighbor n : neighborList)  System.out.printf("%d %f %f\n", n.userId, n.similarity, n.getMean());
     }
-    
+
+    /**
+     * Helper class that will contains the information of the Neighbor
+     * @author lacoursf
+     *
+     */
     private class Neighbor
     {
     	public final long userId;
@@ -164,6 +172,11 @@ public class SimpleUserUserItemScorer extends AbstractItemScorer {
 		}
     }
     
+    /**
+     * Helper class used to sort Neighbor in descending order of similarity
+     * @author lacoursf
+     *
+     */
     private class NeighborComparator implements Comparator<Neighbor> {
     	@Override
     	public int compare(Neighbor o1, Neighbor o2) {
@@ -172,8 +185,6 @@ public class SimpleUserUserItemScorer extends AbstractItemScorer {
     		return 0;
     	}
     }    
-
-    
 }
 
 
