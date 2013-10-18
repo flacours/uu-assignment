@@ -125,7 +125,7 @@ public class SimpleUserUserItemScorer extends AbstractItemScorer {
     	List<Neighbor> neighborList = new ArrayList<Neighbor>();
     	CosineVectorSimilarity cosineVector = new CosineVectorSimilarity();
     	MutableSparseVector msUser = userVector.mutableCopy();
-		// center mean : we substract the vector average
+		// center mean : subtract the vector average from the vector
     	msUser.add(-1*msUser.mean());
     	for(UserHistory<Event> u : userDao.streamEventsByUser().fast())
     	{
@@ -135,7 +135,7 @@ public class SimpleUserUserItemScorer extends AbstractItemScorer {
     		if(neighborVector.containsKey(itemId))
     		{
     			MutableSparseVector ms = neighborVector.mutableCopy();
-    			// center mean : we substract the vector average
+    			// center mean : subtract the vector average from the vector
     			ms.add(-1*ms.mean());
     			double similarity = cosineVector.similarity(msUser, ms);
     			neighborList.add(new Neighbor(neighborId, ms.freeze(), similarity));
